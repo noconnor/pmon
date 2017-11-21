@@ -13,6 +13,7 @@ import java.net.URL;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.lang3.StringEscapeUtils;
 import com.google.common.base.Joiner;
 import com.google.common.net.HostAndPort;
 
@@ -23,7 +24,7 @@ import static org.apache.commons.collections.CollectionUtils.isNotEmpty;
 public class Lsof {
 
   // Netstat on linux/unix , lsof on Mac
-  private static final String COMMAND = "/usr/sbin/lsof -i -n -P";
+  private static final String COMMAND = "/usr/sbin/lsof -i -P";
 
   //
   // Proof of concept!
@@ -70,7 +71,7 @@ public class Lsof {
       StringBuilder node = new StringBuilder();
       node.append("{");
       node.append("\"name\":\"");
-      node.append(k);
+      node.append(StringEscapeUtils.escapeJson(k));
       node.append("\"");
       if(isNotEmpty(v)) {
         node.append(", \"children\" : [");
