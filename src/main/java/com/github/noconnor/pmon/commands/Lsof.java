@@ -13,6 +13,8 @@ import java.net.URL;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.StringEscapeUtils;
 import com.google.common.base.Joiner;
 import com.google.common.net.HostAndPort;
@@ -116,8 +118,22 @@ public class Lsof {
   }
 
 
-  public static void main(String[] args) throws IOException, InterruptedException {
-    new Lsof().execute();
+  public static void main(String[] args) {
+    Executors.newScheduledThreadPool(1).scheduleAtFixedRate(() -> {
+      try {
+        new Lsof().execute();
+      } catch (IOException | InterruptedException e) {
+        e.printStackTrace();
+      }
+    }, 0, 20, TimeUnit.SECONDS);
+
+    while (!Thread.currentThread().isInterrupted()) {
+      try {
+        Thread.sleep(1_000);
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
   }
 
 }
