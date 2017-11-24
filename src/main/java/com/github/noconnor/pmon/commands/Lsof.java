@@ -1,7 +1,9 @@
 package com.github.noconnor.pmon.commands;
 
 import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -9,121 +11,181 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetAddress;
 import java.net.URL;
-import java.util.Comparator;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import org.apache.commons.lang3.StringEscapeUtils;
-import com.google.common.base.Joiner;
+import java.util.concurrent.atomic.AtomicLong;
 import com.google.common.net.HostAndPort;
+import com.google.gson.Gson;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Maps.newHashMap;
-import static org.apache.commons.collections.CollectionUtils.isNotEmpty;
+import static java.lang.System.currentTimeMillis;
+import static java.util.Collections.reverseOrder;
+import static java.util.Comparator.comparingLong;
+import static java.util.Objects.isNull;
 
+
+@Slf4j
 public class Lsof {
 
-  // Netstat on linux/unix , lsof on Mac
   private static final String COMMAND = "/usr/sbin/lsof -i -P";
 
-  //
-  // Proof of concept!
-  //
-  public void execute() throws IOException, InterruptedException {
+
+  public Map<String, ProcessEntry> execute() throws IOException, InterruptedException {
     Runtime rt = Runtime.getRuntime();
     Process proc = rt.exec(COMMAND);
     proc.waitFor();
 
-    BufferedReader stdInput = new BufferedReader(new InputStreamReader(proc.getInputStream()));
+    Map<String, ProcessEntry> processes = newHashMap();
 
-    Map<String, List<Connection>> output = newHashMap();
-    String line;
-    while ((line = stdInput.readLine()) != null) {
-      String[] parts = line.split("\\s+");
-      String process = parts[0];
-      String connection = parts[8];
+    try(BufferedReader stdInput = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+      String line;
+      while ((line = stdInput.readLine()) != null) {
+        String[] parts = line.split("\\s+");
+        String process = parts[0];
+        String connection = parts[8];
 
-      String[] connectionParts = connection.split("->");
-      if (connectionParts.length > 1) {
+        String[] connectionParts = connection.split("->");
+        if (connectionParts.length > 1) {
 
-        HostAndPort src = HostAndPort.fromString(connectionParts[0]);
-        HostAndPort tgt = HostAndPort.fromString(connectionParts[1]);
+          HostAndPort src = HostAndPort.fromString(connectionParts[0]);
+          HostAndPort tgt = HostAndPort.fromString(connectionParts[1]);
 
-        Connection conn = Connection.builder()
-          .srcAddress(src.getHostText())
-          .srcPort(src.getPort())
-          .targetAddress(tgt.getHostText())
-          .targetPort(tgt.getPort())
-          .build();
+          Connection conn = Connection.builder()
+            .name(tgt.getHostText())
+            .lastUpdateTime(currentTimeMillis())
+            .srcAddress(src.getHostText())
+            .srcPort(src.getPort())
+            .targetAddress(tgt.getHostText())
+            .targetPort(tgt.getPort())
+            .build();
 
-        List<Connection> connections = output.getOrDefault(process, newArrayList());
-        connections.add(conn);
-        output.put(process, connections);
+          ProcessEntry entry = processes.getOrDefault(process, new ProcessEntry(process));
+
+          entry.children.add(conn);
+          processes.put(process, entry);
+        }
       }
     }
-
-    // Bleugh
-    StringBuilder tree = new StringBuilder();
-    tree.append("{\"name\":\"processes\",");
-    tree.append("\"children\":[");
-    List<String> nodes = newArrayList();
-    output.forEach( (k,v) -> {
-      StringBuilder node = new StringBuilder();
-      node.append("{");
-      node.append("\"name\":\"");
-      node.append(StringEscapeUtils.escapeJson(k));
-      node.append("\"");
-      if(isNotEmpty(v)) {
-        node.append(", \"children\" : [");
-        List<String> children = newArrayList();
-        v.sort(Comparator.comparing(o -> o.targetAddress));
-        v.forEach( c -> {
-            StringBuilder child = new StringBuilder();
-            child.append("{\"name\":\"");
-            child.append(c.targetAddress);
-            child.append(":");
-            child.append(c.targetPort);
-            child.append("\"}");
-            children.add(child.toString());
-          }
-        );
-        node.append(Joiner.on(",").join(children));
-        node.append("]");
-      }
-      node.append("}");
-      nodes.add(node.toString());
-    });
-    tree.append(Joiner.on(",").join(nodes));
-    tree.append("]}");
-
-    URL url = ClassLoader.getSystemClassLoader().getResource("flare.json");
-    try(BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(url.getFile())))){
-      writer.write(tree.toString());
-    }
-
-    System.out.println(tree);
+    return processes;
 
   }
 
 
-  @Value
+  @Data
+  static class ProcessTree {
+    private final String name;
+    private final long id;
+    private List<ProcessEntry> children;
+  }
+
+  @Data
+  @EqualsAndHashCode(exclude={"lastUpdateTime", "disabled"})
+  static class ProcessEntry {
+    private final String name;
+    private long id;
+    private List<Connection> children = newArrayList();
+    private long lastUpdateTime;
+    private boolean disabled;
+  }
+
+
+  @Data
   @Builder
+  @EqualsAndHashCode(exclude={"lastUpdateTime", "disabled"})
   static class Connection {
-    String srcAddress;
-    int srcPort;
-    String targetAddress;
-    int targetPort;
+    private final String name;
+    private long id;
+    private String srcAddress;
+    private int srcPort;
+    private String targetAddress;
+    private int targetPort;
+    private long lastUpdateTime;
+    private boolean disabled;
   }
 
 
-  public static void main(String[] args) {
+  public static void main(String[] args) throws UnknownHostException {
+
+    AtomicLong idGenerator = new AtomicLong();
+
+    ProcessTree tree = new ProcessTree(InetAddress.getLocalHost().getHostName(), idGenerator.incrementAndGet());
+    Map<String, ProcessEntry> processHistory = newHashMap();
+
+
     Executors.newScheduledThreadPool(1).scheduleAtFixedRate(() -> {
       try {
-        new Lsof().execute();
+
+        Map<String, ProcessEntry> runningProcesses = new Lsof().execute();
+
+        runningProcesses.forEach( (processName, runningProcessData) -> {
+          ProcessEntry historicalProcess = processHistory.get(processName);
+          if(isNull(historicalProcess)) {
+            // Add new process to the map
+            runningProcessData.id = idGenerator.incrementAndGet();
+            runningProcessData.children.forEach( c -> c.id = idGenerator.incrementAndGet());
+            processHistory.put(processName, runningProcessData);
+          } else {
+
+            // Mark old connections as disabled
+            historicalProcess.children.forEach( historicalConnection -> {
+              Optional<Connection> activeConnection = runningProcessData.children.stream()
+                .filter(c -> c.name.equals(historicalConnection.name))
+                .findFirst();
+
+              if (activeConnection.isPresent()) {
+                historicalConnection.disabled = false;
+                historicalConnection.lastUpdateTime = activeConnection.get().lastUpdateTime;
+              } else {
+                historicalConnection.disabled = true;
+              }
+            });
+
+            // add new connections
+            runningProcessData.children.forEach( activeConnection -> {
+
+              Optional<Connection> match = historicalProcess.children.stream()
+                .filter(c -> c.name.equals(activeConnection.name))
+                .findFirst();
+
+              if(!match.isPresent()){
+                activeConnection.id = idGenerator.incrementAndGet();
+                historicalProcess.children.add(activeConnection);
+              }
+            });
+          }
+        });
+
+        // Mark old processes as disabled
+        processHistory.forEach( (processName, historicalProcessData) -> {
+          if (!runningProcesses.containsKey(processName)) {
+            historicalProcessData.disabled = true;
+            historicalProcessData.children.forEach( c -> c.disabled = true);
+          } else {
+            historicalProcessData.disabled = false;
+          }
+          historicalProcessData.children.sort(reverseOrder(comparingLong(c -> c.lastUpdateTime)));
+        });
+
+        tree.children = newArrayList(processHistory.values());
+
+        Gson gson = new Gson();
+        String json = gson.toJson(tree);
+        URL url = ClassLoader.getSystemClassLoader().getResource("flare.json");
+        try(BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(url.getFile())))){
+          writer.write(json);
+        }
+
+        System.out.println(json);
+
       } catch (IOException | InterruptedException e) {
-        e.printStackTrace();
+        // ignore
       }
     }, 0, 20, TimeUnit.SECONDS);
 
@@ -131,7 +193,7 @@ public class Lsof {
       try {
         Thread.sleep(1_000);
       } catch (InterruptedException e) {
-        e.printStackTrace();
+        break;
       }
     }
   }
