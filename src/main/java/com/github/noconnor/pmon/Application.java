@@ -1,27 +1,22 @@
 package com.github.noconnor.pmon;
 
-import com.github.noconnor.pmon.commands.Lsof;
-import com.github.noconnor.pmon.data.ConnectionData;
-import com.github.noconnor.pmon.data.ProcessData;
-import com.github.noconnor.pmon.data.ProcessTree;
-import com.google.common.base.Joiner;
-import com.google.gson.Gson;
+import lombok.extern.slf4j.Slf4j;
 
-import java.io.BufferedWriter;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.URL;
-import java.net.UnknownHostException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import com.github.noconnor.pmon.commands.Lsof;
+import com.github.noconnor.pmon.data.ConnectionData;
+import com.github.noconnor.pmon.data.ProcessData;
+import com.github.noconnor.pmon.data.ProcessTree;
+import com.google.common.base.Joiner;
+import com.google.gson.Gson;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Maps.newHashMap;
@@ -30,6 +25,7 @@ import static java.util.Comparator.comparingLong;
 import static java.util.Objects.isNull;
 import static spark.Spark.get;
 
+@Slf4j
 public class Application {
 
   public static void main(String[] args) throws Exception {
@@ -55,7 +51,8 @@ public class Application {
 
             // Mark old connections as disabled
             historicalProcess.getChildren().forEach(historicalConnection -> {
-              Optional<ConnectionData> activeConnection = runningProcessData.getChildren().stream()
+              Optional<ConnectionData> activeConnection = runningProcessData.getChildren()
+                .stream()
                 .filter(c -> c.getName().equals(historicalConnection.getName()))
                 .findFirst();
 
@@ -70,7 +67,8 @@ public class Application {
             // add new connections
             runningProcessData.getChildren().forEach(activeConnection -> {
 
-              Optional<ConnectionData> match = historicalProcess.getChildren().stream()
+              Optional<ConnectionData> match = historicalProcess.getChildren()
+                .stream()
                 .filter(c -> c.getName().equals(activeConnection.getName()))
                 .findFirst();
 
@@ -95,26 +93,11 @@ public class Application {
 
         tree.setChildren(newArrayList(processHistory.values()));
 
-//        String json = gson.toJson(tree);
-//        URL url = ClassLoader.getSystemClassLoader().getResource("flare.json");
-//        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(url.getFile())))) {
-//          writer.write(json);
-//        }
-
-//        System.out.println(json);
-
-      } catch (IOException | InterruptedException e) {
-        // ignore
+      } catch (Exception e) {
+        log.error("Unexpected error", e);
       }
     }, 0, 20, TimeUnit.SECONDS);
 
-//    while (!Thread.currentThread().isInterrupted()) {
-//      try {
-//        Thread.sleep(1_000);
-//      } catch (InterruptedException e) {
-//        break;
-//      }
-//    }
 
     URL processesHtml = ClassLoader.getSystemClassLoader().getResource("template.html");
     String html = Joiner.on("\n").join(Files.readAllLines(Paths.get(processesHtml.getFile())));
