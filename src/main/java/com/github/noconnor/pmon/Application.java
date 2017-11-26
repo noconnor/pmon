@@ -28,11 +28,13 @@ import static spark.Spark.get;
 @Slf4j
 public class Application {
 
+  private static volatile ProcessTree tree;
+
   public static void main(String[] args) throws Exception {
 
     AtomicLong idGenerator = new AtomicLong();
 
-    ProcessTree tree = new ProcessTree(InetAddress.getLocalHost().getHostName(), idGenerator.incrementAndGet());
+    tree = new ProcessTree(InetAddress.getLocalHost().getHostName(), idGenerator.incrementAndGet());
     Map<String, ProcessData> processHistory = newHashMap();
 
     Executors.newScheduledThreadPool(1).scheduleAtFixedRate(() -> {
@@ -102,9 +104,8 @@ public class Application {
     URL processesHtml = ClassLoader.getSystemClassLoader().getResource("template.html");
     String html = Joiner.on("\n").join(Files.readAllLines(Paths.get(processesHtml.getFile())));
 
-    get("/processes.html", (req, res) -> {
-      return html;
-    });
+    get("/processes.html", (req, res) -> html);
+
     get("/flare.json", (req, res) -> {
       res.header("Content-type", "application/json");
       Gson gson = new Gson();
