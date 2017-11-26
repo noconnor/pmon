@@ -15,11 +15,11 @@ import static java.lang.System.currentTimeMillis;
 
 
 @Slf4j
-public class Lsof {
+public class Lsof implements Command {
 
   private static final String COMMAND = "/usr/sbin/lsof -i -P";
 
-
+  @Override
   public Map<String, ProcessData> execute() throws IOException, InterruptedException {
     Runtime rt = Runtime.getRuntime();
     Process proc = rt.exec(COMMAND);

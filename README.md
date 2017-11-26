@@ -22,6 +22,6 @@ users system and builds a graph representation of those processes.
 
 Build project : `./gradlew clean compileJava`
 
-From IDE (intellij) run the main function in `Lsof.java`
+From IDE (intellij) run the main function in `Application.java`
 
-Open `template.html` report in `<PROJECT_ROOT>/out/production/resources`
+Browse to `http://localhost:4567/processes.html` in your browser of choice  

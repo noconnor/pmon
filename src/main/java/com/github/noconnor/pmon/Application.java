@@ -4,6 +4,7 @@ import com.github.noconnor.pmon.commands.Lsof;
 import com.github.noconnor.pmon.data.ConnectionData;
 import com.github.noconnor.pmon.data.ProcessData;
 import com.github.noconnor.pmon.data.ProcessTree;
+import com.google.common.base.Joiner;
 import com.google.gson.Gson;
 
 import java.io.BufferedWriter;
@@ -13,6 +14,9 @@ import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
@@ -24,16 +28,16 @@ import static com.google.common.collect.Maps.newHashMap;
 import static java.util.Collections.reverseOrder;
 import static java.util.Comparator.comparingLong;
 import static java.util.Objects.isNull;
+import static spark.Spark.get;
 
 public class Application {
 
-  public static void main(String[] args) throws UnknownHostException {
+  public static void main(String[] args) throws Exception {
 
     AtomicLong idGenerator = new AtomicLong();
 
     ProcessTree tree = new ProcessTree(InetAddress.getLocalHost().getHostName(), idGenerator.incrementAndGet());
     Map<String, ProcessData> processHistory = newHashMap();
-
 
     Executors.newScheduledThreadPool(1).scheduleAtFixedRate(() -> {
       try {
@@ -91,27 +95,39 @@ public class Application {
 
         tree.setChildren(newArrayList(processHistory.values()));
 
-        Gson gson = new Gson();
-        String json = gson.toJson(tree);
-        URL url = ClassLoader.getSystemClassLoader().getResource("flare.json");
-        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(url.getFile())))) {
-          writer.write(json);
-        }
+//        String json = gson.toJson(tree);
+//        URL url = ClassLoader.getSystemClassLoader().getResource("flare.json");
+//        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(url.getFile())))) {
+//          writer.write(json);
+//        }
 
-        System.out.println(json);
+//        System.out.println(json);
 
       } catch (IOException | InterruptedException e) {
         // ignore
       }
     }, 0, 20, TimeUnit.SECONDS);
 
-    while (!Thread.currentThread().isInterrupted()) {
-      try {
-        Thread.sleep(1_000);
-      } catch (InterruptedException e) {
-        break;
-      }
-    }
+//    while (!Thread.currentThread().isInterrupted()) {
+//      try {
+//        Thread.sleep(1_000);
+//      } catch (InterruptedException e) {
+//        break;
+//      }
+//    }
+
+    URL processesHtml = ClassLoader.getSystemClassLoader().getResource("template.html");
+    String html = Joiner.on("\n").join(Files.readAllLines(Paths.get(processesHtml.getFile())));
+
+    get("/processes.html", (req, res) -> {
+      return html;
+    });
+    get("/flare.json", (req, res) -> {
+      res.header("Content-type", "application/json");
+      Gson gson = new Gson();
+      return gson.toJson(tree);
+    });
+
   }
 
 }
